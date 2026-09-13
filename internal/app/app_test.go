@@ -2483,7 +2483,7 @@ func TestRunCompareRejectsUnusableArtifacts(t *testing.T) {
 	}
 	garbage := write("garbage.ndoc", "not json at all")
 	future := write("future.ndoc", `{"schema":"netdoc.snapshot.v2","checks":[]}`)
-	unlabelled := write("unlabelled.ndoc", `{"schema":"`+snapshot.Schema+`","checks":[{"id":"iface"}]}`)
+	unlabelled := write("unlabelled.ndoc", `{"schema":"`+snapshot.Schema+`","created_at":"2026-01-02T03:04:05Z","tool":{"version":"dev","os":"linux","arch":"amd64"},"checks":[{"id":"iface"}]}`)
 	missing := filepath.Join(dir, "nothing-here.ndoc")
 
 	tests := []struct {
@@ -2612,5 +2612,32 @@ func TestRunSaveRecordsWhetherThePublicResolverWasChosen(t *testing.T) {
 				t.Errorf("options.public_dns = %q, want an address or empty", got)
 			}
 		})
+	}
+}
+
+// The artifact stores milliseconds, not the CLI duration, so a sub-millisecond
+// timeout has nowhere to go in it. That is settled at the invocation instead of
+// here: the run is refused before it starts, which is why no artifact a run can
+// produce records a timeout it did not have. The remaining zero means absent,
+// and an artifact carrying it still encodes and reads.
+func TestSubMillisecondTimeoutIsRefusedBeforeAnArtifactExists(t *testing.T) {
+	orig := runAll
+	t.Cleanup(func() { runAll = orig })
+	runAll = func(context.Context, []diagnostic.Probe, time.Duration) map[diagnostic.ProbeID]diagnostic.ProbeResult {
+		t.Fatal("probes ran for a timeout the artifact cannot record")
+		return nil
+	}
+	path := filepath.Join(t.TempDir(), "run.ndoc")
+	var stdout, stderr bytes.Buffer
+	if got := run([]string{"--save", path, "--no-history", "--timeout", "1ns", "example.com"}, &stdout, &stderr); got != 2 {
+		t.Fatalf("exit = %d, want 2; stderr: %s", got, stderr.String())
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("a refused invocation wrote a snapshot")
+	}
+	if s, err := snapshot.Encode(buildSnapshotArtifact(headless{}, nil, nil)); err != nil {
+		t.Fatalf("an artifact with no recorded timeout must still encode: %v", err)
+	} else if _, err := snapshot.Decode(s); err != nil {
+		t.Fatalf("an artifact with no recorded timeout must still decode: %v", err)
 	}
 }

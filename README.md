@@ -163,7 +163,8 @@ Each one gets a sentence here and a complete contract in the reference.
 - **Drill-down tools.** When a row is not proof enough, run the real tools as
   cancellable streaming jobs, several at once, sanitized before the output hits
   your terminal: route, socket, ping, DNS, curl, traceroute, mtr, and nmap are
-  one keypress each, `v` maps the local private network, and `S` opens an SSH
+  one keypress each, `v` shows the latest local-network snapshot (or starts the
+  first discovery), Actions can rescan it, and `S` opens an SSH
   login. [Per-OS commands](docs/reference.md#drill-down-tools).
 - **Structured output and exit codes.** `--json` prints one document with stable
   field names: `status` per row, and the `verdict` a script actually asks about
