@@ -35,6 +35,24 @@ func (m *model) jobByID(id string) *jobState {
 	return nil
 }
 
+// newestJob returns the named run with the greatest start time. Selection and
+// tab order can change without making an older measurement newer. parked is
+// -1 when the run is already selected.
+func (m *model) newestJob(name string) (*jobState, int) {
+	var newest *jobState
+	parked := -1
+	if m.hasJob() && m.cur.name == name {
+		newest = &m.cur
+	}
+	for i := range m.otherJobs {
+		j := &m.otherJobs[i]
+		if j.name == name && (newest == nil || j.start.After(newest.start)) {
+			newest, parked = j, i
+		}
+	}
+	return newest, parked
+}
+
 // runningJobs counts live subprocesses, the selected slot included. A job with
 // no active handle has already delivered its ToolDoneMsg.
 func (m model) runningJobs() int {
@@ -91,12 +109,18 @@ func (m *model) stashJob() {
 // to route to, and the user didn't ask for it to be killed. That means the ring
 // can sit over the cap while jobs are in flight, and maxActiveJobs bounds how far.
 func (m *model) trimJobs() {
-	for i := 0; i < len(m.otherJobs) && len(m.otherJobs) > maxParkedJobs; {
-		if m.otherJobs[i].active != nil {
-			i++
-			continue
+	for len(m.otherJobs) > maxParkedJobs {
+		oldest := -1
+		for i := range m.otherJobs {
+			j := &m.otherJobs[i]
+			if j.active == nil && (oldest < 0 || j.start.Before(m.otherJobs[oldest].start)) {
+				oldest = i
+			}
 		}
-		m.otherJobs = append(m.otherJobs[:i], m.otherJobs[i+1:]...)
+		if oldest < 0 {
+			return
+		}
+		m.otherJobs = append(m.otherJobs[:oldest], m.otherJobs[oldest+1:]...)
 	}
 }
 

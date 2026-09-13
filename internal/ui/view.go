@@ -1186,7 +1186,20 @@ func (m model) networkMapView() string {
 	}
 	var b strings.Builder
 	b.WriteString(title + "\n")
+	if m.cur.active == nil {
+		status := "Status: " + m.cur.status.String()
+		if !m.cur.start.IsZero() {
+			status = "Captured: " + m.cur.start.Add(m.cur.dur).Format("2006-01-02 15:04:05 MST") + " · " + status
+		}
+		if m.cur.status != JobDone && len(hosts) > 0 {
+			status += " · partial results"
+		}
+		b.WriteString(m.st.faint.Render(status) + "\n")
+	}
 	b.WriteString(m.st.sel.Render("◆") + " This device")
+	if m.watch {
+		b.WriteString(" now")
+	}
 	if source != nil {
 		b.WriteString(" " + source.String())
 	}

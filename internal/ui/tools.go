@@ -25,7 +25,8 @@ type Tool struct {
 	// tools use it so a hostname that resolved to AAAA isn't probed over IPv4.
 	Build func(t *diagnostic.Target, sel net.IP) (args, env []string, display string)
 
-	Available bool // whether the tool's binary is installed
+	Available   bool   // whether the tool's binary is installed
+	networkCIDR string // LAN snapshot context, committed only when discovery starts
 }
 
 var toolLookPath = exec.LookPath
@@ -302,7 +303,7 @@ func digTool(quote func([]string) string, host string) Tool {
 
 func lanDiscoveryTool(quote func([]string) string, cidr string) Tool {
 	return Tool{
-		Key: "v", Name: lanDiscoveryName, Bin: "nmap", Confirm: true, Timeout: 60 * time.Second,
+		Key: "v", Name: lanDiscoveryName, Bin: "nmap", Confirm: true, Timeout: 60 * time.Second, networkCIDR: cidr,
 		Build: func(*diagnostic.Target, net.IP) ([]string, []string, string) {
 			args := []string{"--unprivileged", "-sn", "-T3", "--host-timeout", "5s", "-oG", "-", cidr}
 			return args, nil, "nmap " + quote(args)

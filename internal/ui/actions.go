@@ -102,6 +102,9 @@ func (m model) actionAvailable(act keyAction) bool {
 		return m.allDone() && m.chainRan()
 	case actSSH:
 		return m.sshDetected()
+	case actRescanNetwork:
+		j, _ := (&m).newestJob(lanDiscoveryName)
+		return j != nil && j.active == nil
 	case actExpand:
 		if m.expanded {
 			return m.allDone()
@@ -147,15 +150,15 @@ func (m model) actionName(def actionDef) string {
 	return def.menu
 }
 
-// actionItems is what the current state can do: the bound list-context actions
-// that are available right now, in cheatsheet order, then the drill-down tools
-// whose binary is installed. Both halves are read from the definitions dispatch
-// itself uses, so the menu cannot offer a key that does nothing, miss one that
-// works, or name a tool differently from its hotkey.
+// actionItems is what the current state can do: available built-ins in
+// cheatsheet order, then the drill-down tools whose binary is installed.
+// Built-ins require a list binding except for the explicitly menu-only Rescan.
 func (m model) actionItems() []actionItem {
 	var items []actionItem
 	for _, def := range actionDefs {
-		if def.menu == "" || !m.keys.bound(ctxList, def.act) || !m.actionAvailable(def.act) {
+		// Rescan is intentionally menu-only. Every other built-in menu row
+		// still requires a list-context binding.
+		if def.menu == "" || (def.act != actRescanNetwork && !m.keys.bound(ctxList, def.act)) || !m.actionAvailable(def.act) {
 			continue
 		}
 		items = append(items, actionItem{
@@ -179,8 +182,8 @@ func (m model) actionItems() []actionItem {
 
 // handleActionsKey drives the Actions menu. Enter runs the selected row and esc
 // closes, as they do in the theme picker; everything else is resolved through
-// the very list bindings the menu is advertising, so a reader who already knows
-// a shortcut can press it here and get exactly what it does outside the menu.
+// the list bindings, so a reader who already knows a shortcut can press it here
+// and get exactly what it does outside the menu.
 func (m model) handleActionsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	items := m.actionItems()
 	last := max(len(items)-1, 0)

@@ -140,33 +140,18 @@ func (m model) runAction(act keyAction) (tea.Model, tea.Cmd) {
 			m.networkMap = false
 			return m, nil
 		}
+		// A cached map always means the newest scan by start time, regardless
+		// of which run tab currently selected or how the ring was reordered.
+		if _, parked := (&m).newestJob(lanDiscoveryName); parked >= 0 {
+			m.selectJob(parked)
+		}
 		if m.cur.name == lanDiscoveryName {
 			m.networkMap = true
 			return m, nil
 		}
-		// A scan parked in the ring still has a map; re-show it instead of
-		// gating a fresh sweep.
-		for i := range m.otherJobs {
-			if m.otherJobs[i].name != lanDiscoveryName {
-				continue
-			}
-			m.selectJob(i)
-			m.networkMap = true
-			return m, nil
-		}
-		_, cidr := m.discoveryNetwork()
-		if cidr == "" {
-			return m, m.setNotice("local private IPv4 network not available yet", false)
-		}
-		tool := lanDiscoveryTool(quoterFor(runtime.GOOS), cidr)
-		if _, err := toolLookPath(tool.Bin); err != nil {
-			return m, m.setNotice("network discovery needs nmap", false)
-		}
-		tool.Available = true
-		m.networkCIDR = cidr
-		// Same confirm gate as nmap: a /24 sweep is an active scan too.
-		m.confirmTool = &tool
-		return m, nil
+		return m.confirmLANDiscovery()
+	case actRescanNetwork:
+		return m.confirmLANDiscovery()
 	case actExpand:
 		// Presentation only: what the Checks panel draws, never
 		// what ran, what the diagnosis concluded, or what the report carries.
@@ -297,6 +282,21 @@ func (m model) runAction(act keyAction) (tea.Model, tea.Cmd) {
 		m.refreshHelpViewport(true)
 		return m, nil
 	}
+	return m, nil
+}
+
+func (m model) confirmLANDiscovery() (tea.Model, tea.Cmd) {
+	_, cidr := m.discoveryNetwork()
+	if cidr == "" {
+		return m, m.setNotice("local private IPv4 network not available yet", false)
+	}
+	tool := lanDiscoveryTool(quoterFor(runtime.GOOS), cidr)
+	if _, err := toolLookPath(tool.Bin); err != nil {
+		return m, m.setNotice("network discovery needs nmap", false)
+	}
+	tool.Available = true
+	// Fresh discovery, whether first scan or Rescan, uses one confirmation path.
+	m.confirmTool = &tool
 	return m, nil
 }
 
@@ -797,6 +797,9 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	}
 	wasTicking := m.spinnerActive()
 	args, env, display := tool.Build(m.target, m.selectedIP())
+	if tool.Name == lanDiscoveryName {
+		m.networkCIDR = tool.networkCIDR
+	}
 	id := fmt.Sprintf("%s-%d-%d", tool.Key, m.generation, time.Now().UnixNano())
 	// Toolbox mode: a tool can launch before the first 'r' creates the
 	// generation context, so initialize it lazily, exactly as scheduleMsg does.

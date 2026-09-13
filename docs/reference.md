@@ -177,12 +177,12 @@ The TUI's default key bindings:
 
 | Key | Action |
 |-----|--------|
-| `space` | the Actions menu: everything the run can do right now, each with its own key; `↑`/`↓` select, `enter` runs, `esc` closes |
+| `space` | the Actions menu: everything the run can do right now, with shortcuts where available; `↑`/`↓` select, `enter` runs, `esc` closes |
 | `↑`/`↓` (`k`/`j`) | select a probe row, or a device or service in the network map |
 | `a` | expand the checks a finished run collapsed, and collapse them again |
 | `e` | show why the selected diagnosis follows from the observed checks, and return to normal details |
 | `i` | in Watch Mode, inspect recorded incidents; use left/right to choose one, and `w` to save it as `.ndoc` |
-| `v` | run a LAN scan and show a network map of the local private `/24` (unprivileged `nmap`) |
+| `v` | show the cached LAN map, or confirm and run discovery when no LAN scan exists |
 | `enter` | open the selected map device, then diagnose one of the services it answers on, or open the current tool job's output |
 | `/` (viewer) | filter the viewer to matching lines (`enter` commits, `esc` clears it, a second `esc` leaves) |
 | `home`/`end`, `pgup`/`pgdn` (viewer) | jump to top/bottom (`end` re-enables follow) or page through the output |
@@ -199,7 +199,7 @@ The TUI's default key bindings:
 
 `--keys vim` adds `gg`/`G` for first/last, `ctrl+b`/`ctrl+f` for page up/down, and `ctrl+u`/`ctrl+d` for half-page up/down; the existing keys continue to work.
 
-`space` opens the Actions menu: the actions and drill-down tools that apply to the current state, each labelled with the key that runs it under the active preset. Up/down or `j`/`k` move, `enter` runs the selected row, `esc` closes, and any shortcut pressed while it is open runs exactly as it does outside it, the confirmation gate on the active scans included. The rows are generated from the same table that drives dispatch, the help bar, and the cheatsheet, and from the same tool definitions as the hotkeys, so the menu can neither offer a key that does nothing nor miss one that works. It is discovery only: no probe, diagnosis, report, or exit code changes with it.
+`space` opens the Actions menu: the actions and drill-down tools that apply to the current state, labelled with their active-preset key when they have one. Up/down or `j`/`k` move, `enter` runs the selected row, `esc` closes, and any shortcut pressed while it is open runs exactly as it does outside it, the confirmation gate on the active scans included. Rescan network is deliberately menu-only and appears after a LAN scan finishes. The rows are generated from the same action and tool definitions used by dispatch, so menu selection keeps stable action identity even as rows appear or disappear. It is discovery only: no probe, diagnosis, report, or exit code changes with it.
 
 `T` opens the theme picker: up/down or `j`/`k` move through the built-in themes and apply the highlighted one at once, `enter` keeps it, and `esc` restores the theme that was active when the picker opened. It is presentation only, so no probe, diagnosis, status, report, snapshot, or exit code changes with it, and every status keeps the glyph and word it always had. The built-ins are `terminal` (the default, the 16 ANSI colours, which follow your terminal's own palette), `harbor`, `ember`, `contrast` (high contrast), and `monochrome` (colour-free, with bold and faint emphasis). There is no `--theme` flag: the picker is the way to choose one. `NO_COLOR=1 netdoc ...` disables colour for a run; an empty `NO_COLOR` value does not.
 
@@ -727,7 +727,7 @@ The same hotkeys map to each OS's built-in tools:
 | `m` | `mtr --report --report-cycles 5` | same (via brew) | `pathping -h 20 -q 5 -p 100 -w 500` (own 90 s budget) |
 | `n` | `nmap -sT -Pn --host-timeout 110s` (the explicit target port, else nmap's default top 1000) | same | same |
 
-`n` and `v` are gated behind an explicit confirmation before their active probes run. `n` uses a plain connect scan with nmap's default timing and no version/OS detection. `v` runs host discovery without raw sockets or root, and caps its scope at the source address's `/24`.
+`n` and fresh LAN discovery are gated behind an explicit confirmation before their active probes run. `n` uses a plain connect scan with nmap's default timing and no version/OS detection. The first `v`, or Actions menu **Rescan network**, runs host discovery without raw sockets or root and caps its scope at the current source address's `/24`. Later `v` presses only show or hide the newest cached map.
 
 The `c` slot is protocol-aware: HTTP(S) and unknown-port targets get `curl`, while SSH (port 22) and SMTP (ports 25/587) targets get a protocol-appropriate handshake probe rather than an HTTPS-oriented `curl` line. The SSH check uses a throwaway known-hosts file (no prompts, no writes) and disables authentication with `PreferredAuthentications=none`, stopping after the banner and key exchange.
 
@@ -737,7 +737,9 @@ The routes and sockets tools are target-independent; the rest need a host. Tools
 
 ### Local devices
 
-`v` answers "I cannot reach the printer" in two steps, so neither one has to be known in advance. The first is the map: unprivileged `nmap -sn` across the source address's `/24`, which finds a device only if it accepts or refuses a TCP connect on port 80 or 443. This machine is listed separately rather than as a device to diagnose, and an address gains a name when mDNS, reverse DNS, or an `ssh_config` alias supplies one.
+`v` answers "I cannot reach the printer" in two steps, so neither one has to be known in advance. With no earlier LAN scan it confirms and runs unprivileged `nmap -sn` across the source address's `/24`; afterward it shows or hides the newest cached map without probing again. A cached map is a snapshot, not live network state: the panel shows its fixed completion time and terminal status. Use Actions menu **Rescan network** for a fresh measurement. Use Retest after changing networks so the diagnostic source and LAN context are rebuilt together.
+
+Discovery finds a device only if it accepts or refuses a TCP connect on port 80 or 443. This machine is listed separately rather than as a device to diagnose, and an address gains a name when mDNS, reverse DNS, or an `ssh_config` alias supplies one. Failed, canceled, and timed-out snapshots keep any observed hosts visible and label them as partial results. Earlier scan output remains in the normal bounded job ring until ordinary eviction.
 
 `enter` on a device opens it and asks what it answers on: one round of ordinary TCP connects, run in parallel inside a single probe timeout, against a fixed list of fifteen ports (21, 22, 23, 53, 80, 443, 445, 515, 631, 2049, 3389, 5900, 8080, 8443, 9100). This is a chooser, not a scan: the list is fixed rather than a range, and nothing is sent after the connect, so the name beside a port ("IPP", "JetDirect") is that port's registered service name and not a claim about what the device is.
 
