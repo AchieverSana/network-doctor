@@ -44,13 +44,16 @@ const ProfileSchema = "netdoc.profile.v1"
 // schema string in the file is the identity, not the name it was saved under.
 const Extension = ".ndoc"
 
-// MaxArtifactBytes bounds an ordinary offline .ndoc read. The format has no
-// declared maximum row or dependency count, so this is deliberately generous
-// rather than derived from a field-level limit: it exists to stop a corrupt
-// or deliberately oversized file from being fully read into memory before
-// validation, not to constrain any legitimate snapshot. Set above
+// MaxArtifactBytes is the maximum encoded size of an ordinary v1 snapshot
+// artifact. It is part of the format, not a reader's private policy: Encode
+// refuses to write a larger artifact, Decode refuses to read one, and an
+// offline reader may therefore stop reading a .ndoc file at this size without
+// rejecting anything this netdoc would have produced. Set above
 // remote.MaxResponseBytes (8 MiB) since one snapshot can bundle more data
-// than a single remote response.
+// than a single remote response, and far above any run observed in the field,
+// so the ceiling is reached by a corrupt or hostile file rather than a real
+// one. It does not apply to a profile artifact, which carries its own schema
+// and bundles a component run per member.
 const MaxArtifactBytes = 16 << 20 // 16 MiB
 
 // The outcomes a check row can carry. They are written down here rather than
@@ -603,6 +606,15 @@ type CounterfactualAlternative struct {
 	Evidence []CausalEvidence `json:"evidence"`
 }
 
+// checkArtifactSize states the MaxArtifactBytes ceiling once, so the writer
+// and the reader agree on where an ordinary snapshot stops being one.
+func checkArtifactSize(data []byte) error {
+	if len(data) > MaxArtifactBytes {
+		return fmt.Errorf("snapshot is %d bytes, over the maximum artifact size of %d bytes", len(data), MaxArtifactBytes)
+	}
+	return nil
+}
+
 // Encode renders a snapshot as the bytes of an .ndoc file: indented JSON with
 // a trailing newline, so it reads in a pager and diffs line by line. The same
 // snapshot always produces the same bytes.
@@ -610,13 +622,9 @@ type CounterfactualAlternative struct {
 // It refuses a snapshot whose rows do not say what they are. An empty status
 // is the zero value of a Go string and not an outcome, and a run holding a
 // check that never reported is not a clean one, so neither can be published:
-// the absence of evidence never leaves here looking like evidence.
-func checkArtifactSize(buf []byte) ([]byte, error) {
-	if len(buf) > MaxArtifactBytes {
-		return nil, fmt.Errorf("snapshot exceeds maximum artifact size of %d bytes; the format has no smaller declared representation", MaxArtifactBytes)
-	}
-	return buf, nil
-}
+// the absence of evidence never leaves here looking like evidence. It also
+// refuses to write more than MaxArtifactBytes, so nothing this netdoc saves
+// is larger than what the format's readers accept.
 func Encode(s Snapshot) ([]byte, error) {
 	s = stamped(s)
 	if err := validate(s); err != nil {
@@ -630,7 +638,10 @@ func Encode(s Snapshot) ([]byte, error) {
 	if err := enc.Encode(s); err != nil {
 		return nil, err
 	}
-	return checkArtifactSize(buf.Bytes())
+	if err := checkArtifactSize(buf.Bytes()); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // EncodeProfile renders a multi-run profile artifact without changing the
@@ -649,7 +660,7 @@ func EncodeProfile(profile ProfileSnapshot) ([]byte, error) {
 	if err := enc.Encode(profile); err != nil {
 		return nil, err
 	}
-	return checkArtifactSize(buf.Bytes())
+	return buf.Bytes(), nil
 }
 
 func validProfileName(name string) bool {
@@ -1617,7 +1628,14 @@ func familyObservation(check Check, family string) string {
 // an added optional field a compatible change. A row that does not say what it
 // is, on the other hand, is not an unknown field: it is the one thing Encode
 // refuses to write, and Decode refuses to read it back.
+//
+// Anything over MaxArtifactBytes is refused before the JSON is parsed. A
+// caller reading from a stream should still bound the read itself, since by
+// here the bytes are already allocated.
 func Decode(data []byte) (Snapshot, error) {
+	if err := checkArtifactSize(data); err != nil {
+		return Snapshot{}, err
+	}
 	var head struct {
 		Schema string `json:"schema"`
 	}
